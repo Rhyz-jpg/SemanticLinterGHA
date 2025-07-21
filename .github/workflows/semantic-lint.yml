@@ -12,16 +12,8 @@ jobs:
         with:
           fetch-depth: 0  # To fetch all history for PR changes
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Run semantic linting
-        env:
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node .github/scripts/semantic-lint.js
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ai-api-key: ${{ secrets.AI_API_KEY }}

@@ -21,6 +21,11 @@ inputs:
 runs:
   using: 'docker'
   image: 'Dockerfile'
+  args:
+    - ${{ inputs.github-token }}
+    - ${{ inputs.ai-api-key }}
+    - ${{ inputs.config-path }}
+    - ${{ inputs.rules-path }}
 
 branding:
   icon: 'check-square'
