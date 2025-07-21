@@ -23,9 +23,28 @@ type Config struct {
 }
 
 type AIConfig struct {
-	APIEndpoint    string            `json:"apiEndpoint"`
-	Headers        map[string]string `json:"headers"`
+	Provider       string            `json:"provider"`
 	PromptTemplate string            `json:"promptTemplate"`
+	Gemini         GeminiConfig      `json:"gemini"`
+	OpenAI         OpenAIConfig      `json:"openai"`
+	Anthropic      AnthropicConfig   `json:"anthropic"`
+}
+
+type GeminiConfig struct {
+	APIEndpoint string            `json:"apiEndpoint"`
+	Headers     map[string]string `json:"headers"`
+}
+
+type OpenAIConfig struct {
+	APIEndpoint string            `json:"apiEndpoint"`
+	Model       string            `json:"model"`
+	Headers     map[string]string `json:"headers"`
+}
+
+type AnthropicConfig struct {
+	APIEndpoint string            `json:"apiEndpoint"`
+	Model       string            `json:"model"`
+	Headers     map[string]string `json:"headers"`
 }
 
 type Severity struct {
@@ -51,6 +70,263 @@ type Issue struct {
 type FileAnalysisResult struct {
 	Filename string
 	Issues   []Issue
+}
+
+type GeminiRequest struct {
+	Contents []GeminiContent `json:"contents"`
+}
+
+type GeminiContent struct {
+	Parts []GeminiPart `json:"parts"`
+}
+
+type GeminiPart struct {
+	Text string `json:"text"`
+}
+
+type GeminiResponse struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+}
+
+type LLMProvider interface {
+	Analyze(patch, prompt, apiKey string) (*AnalysisResult, error)
+}
+
+type GeminiProvider struct {
+	Config GeminiConfig
+}
+
+type OpenAIProvider struct {
+	Config OpenAIConfig
+}
+
+type AnthropicProvider struct {
+	Config AnthropicConfig
+}
+
+func (p *GeminiProvider) Analyze(patch, prompt, apiKey string) (*AnalysisResult, error) {
+	geminiReq := GeminiRequest{
+		Contents: []GeminiContent{
+			{
+				Parts: []GeminiPart{
+					{
+						Text: prompt,
+					},
+				},
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(geminiReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	endpoint := strings.Replace(p.Config.APIEndpoint, "{{AI_API_KEY}}", apiKey, -1)
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for key, value := range p.Config.Headers {
+		req.Header.Set(key, value)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %s: %s", resp.Status, string(body))
+	}
+
+	var geminiResp GeminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
+		return nil, fmt.Errorf("failed to decode gemini response: %w", err)
+	}
+
+	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("no content found in gemini response")
+	}
+
+	jsonString := geminiResp.Candidates[0].Content.Parts[0].Text
+	jsonString = strings.TrimPrefix(jsonString, "```json")
+	jsonString = strings.TrimSuffix(jsonString, "```")
+	jsonString = strings.TrimSpace(jsonString)
+
+	var result AnalysisResult
+	if err := json.Unmarshal([]byte(jsonString), &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal analysis result from gemini response: %w", err)
+	}
+
+	return &result, nil
+}
+
+type OpenAIRequest struct {
+	Model    string           `json:"model"`
+	Messages []OpenAIMessage `json:"messages"`
+}
+
+type OpenAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type OpenAIResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+func (p *OpenAIProvider) Analyze(patch, prompt, apiKey string) (*AnalysisResult, error) {
+	openAIReq := OpenAIRequest{
+		Model: p.Config.Model,
+		Messages: []OpenAIMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	}
+
+	bodyBytes, err := json.Marshal(openAIReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", p.Config.APIEndpoint, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for key, value := range p.Config.Headers {
+		value = strings.Replace(value, "{{AI_API_KEY}}", apiKey, -1)
+		req.Header.Set(key, value)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %s: %s", resp.Status, string(body))
+	}
+
+	var openAIResp OpenAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&openAIResp); err != nil {
+		return nil, fmt.Errorf("failed to decode openai response: %w", err)
+	}
+
+	if len(openAIResp.Choices) == 0 {
+		return nil, fmt.Errorf("no choices found in openai response")
+	}
+
+	jsonString := openAIResp.Choices[0].Message.Content
+	jsonString = strings.TrimPrefix(jsonString, "```json")
+	jsonString = strings.TrimSuffix(jsonString, "```")
+	jsonString = strings.TrimSpace(jsonString)
+
+	var result AnalysisResult
+	if err := json.Unmarshal([]byte(jsonString), &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal analysis result from openai response: %w", err)
+	}
+
+	return &result, nil
+}
+
+type AnthropicRequest struct {
+	Model    string             `json:"model"`
+	Messages []AnthropicMessage `json:"messages"`
+	MaxTokens int                `json:"max_tokens"`
+}
+
+type AnthropicMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type AnthropicResponse struct {
+	Content []struct {
+		Text string `json:"text"`
+	} `json:"content"`
+}
+
+func (p *AnthropicProvider) Analyze(patch, prompt, apiKey string) (*AnalysisResult, error) {
+	anthropicReq := AnthropicRequest{
+		Model: p.Config.Model,
+		Messages: []AnthropicMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+		MaxTokens: 4096,
+	}
+
+	bodyBytes, err := json.Marshal(anthropicReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", p.Config.APIEndpoint, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for key, value := range p.Config.Headers {
+		value = strings.Replace(value, "{{AI_API_KEY}}", apiKey, -1)
+		req.Header.Set(key, value)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %s: %s", resp.Status, string(body))
+	}
+
+	var anthropicResp AnthropicResponse
+	if err := json.NewDecoder(resp.Body).Decode(&anthropicResp); err != nil {
+		return nil, fmt.Errorf("failed to decode anthropic response: %w", err)
+	}
+
+	if len(anthropicResp.Content) == 0 {
+		return nil, fmt.Errorf("no content found in anthropic response")
+	}
+
+	jsonString := anthropicResp.Content[0].Text
+	jsonString = strings.TrimPrefix(jsonString, "```json")
+	jsonString = strings.TrimSuffix(jsonString, "```")
+	jsonString = strings.TrimSpace(jsonString)
+
+	var result AnalysisResult
+	if err := json.Unmarshal([]byte(jsonString), &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal analysis result from anthropic response: %w", err)
+	}
+
+	return &result, nil
 }
 
 func main() {
@@ -90,6 +366,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	var provider LLMProvider
+	switch config.AI.Provider {
+	case "gemini":
+		provider = &GeminiProvider{Config: config.AI.Gemini}
+	case "openai":
+		provider = &OpenAIProvider{Config: config.AI.OpenAI}
+	case "anthropic":
+		provider = &AnthropicProvider{Config: config.AI.Anthropic}
+	default:
+		fmt.Printf("Unsupported AI provider: %s\n", config.AI.Provider)
+		os.Exit(1)
+	}
+
 	fmt.Println("Config and rules loaded successfully.")
 
 	ctx := context.Background()
@@ -123,7 +412,7 @@ func main() {
 
 	var results []*FileAnalysisResult
 	for _, file := range filesToAnalyze {
-		analysis, err := analyzePatch(file.Patch, config, rules, aiAPIKey)
+		analysis, err := analyzePatch(file.Patch, config, rules, aiAPIKey, provider)
 		if err != nil {
 			fmt.Printf("Error analyzing patch for %s: %v\n", file.Filename, err)
 			continue
@@ -240,47 +529,11 @@ func matchAny(path string, patterns []string) (bool, error) {
 	return false, nil
 }
 
-func analyzePatch(patch string, config *Config, rules, apiKey string) (*AnalysisResult, error) {
+func analyzePatch(patch string, config *Config, rules, apiKey string, provider LLMProvider) (*AnalysisResult, error) {
 	prompt := strings.Replace(config.AI.PromptTemplate, "{rules}", rules, 1)
 	prompt = strings.Replace(prompt, "{code}", patch, 1)
 
-	body := map[string]string{
-		"prompt": prompt,
-		"code":   patch,
-	}
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", config.AI.APIEndpoint, bytes.NewBuffer(bodyBytes))
-	if err != nil {
-		return nil, err
-	}
-
-	for key, value := range config.AI.Headers {
-		value = strings.Replace(value, "{{AI_API_KEY}}", apiKey, -1)
-		req.Header.Set(key, value)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed: %s", resp.Status)
-	}
-
-	var result AnalysisResult
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return provider.Analyze(patch, prompt, apiKey)
 }
 
 func postResults(ctx context.Context, client *github.Client, owner, repo string, prNumber int, results []*FileAnalysisResult, config *Config) error {
