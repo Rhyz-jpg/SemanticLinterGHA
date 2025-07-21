@@ -389,14 +389,9 @@ func main() {
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
 
-	prNumberStr := os.Getenv("INPUT_PR-NUMBER")
-	if prNumberStr == "" {
-		fmt.Println("Pull request number is not set.")
-		os.Exit(1)
-	}
-	prNumber, err := strconv.Atoi(prNumberStr)
+	prNumber, err := getPullRequestNumber()
 	if err != nil {
-		fmt.Printf("Invalid pull request number: %v\n", err)
+		fmt.Printf("Error getting pull request number: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -574,4 +569,40 @@ func hasErrors(results []*FileAnalysisResult, config *Config) bool {
 		}
 	}
 	return false
+}
+
+func getPullRequestNumber() (int, error) {
+	prNumberStr := os.Getenv("INPUT_PR-NUMBER")
+	if prNumberStr != "" {
+		prNumber, err := strconv.Atoi(prNumberStr)
+		if err == nil {
+			return prNumber, nil
+		}
+	}
+
+	eventPath := os.Getenv("GITHUB_EVENT_PATH")
+	if eventPath == "" {
+		return 0, fmt.Errorf("GITHUB_EVENT_PATH is not set")
+	}
+
+	data, err := os.ReadFile(eventPath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read event file: %w", err)
+	}
+
+	var payload struct {
+		PullRequest struct {
+			Number int `json:"number"`
+		} `json:"pull_request"`
+	}
+
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal event payload: %w", err)
+	}
+
+	if payload.PullRequest.Number == 0 {
+		return 0, fmt.Errorf("pull request number not found in event payload")
+	}
+
+	return payload.PullRequest.Number, nil
 }

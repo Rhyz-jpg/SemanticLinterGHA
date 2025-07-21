@@ -6,7 +6,8 @@ on:
 
 
 permissions:
-  pull-requests: read
+  pull-requests: write
+  contents: read
 
 jobs:
   semantic-lint:
@@ -21,3 +22,4 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ai-api-key: ${{ secrets.AI_API_KEY }}
+          pr-number: ${{ github.event.pull_request.number }}

@@ -17,6 +17,10 @@ inputs:
     description: 'Path to the semantic linting rules file.'
     required: false
     default: '.github/SemanticLintingRules.md'
+  pr-number:
+    description: 'The pull request number.'
+    required: true
+    default: ${{ github.event.pull_request.number }}
 
 runs:
   using: 'docker'
@@ -26,6 +30,7 @@ runs:
     - ${{ inputs.ai-api-key }}
     - ${{ inputs.config-path }}
     - ${{ inputs.rules-path }}
+    - ${{ inputs.pr-number }}
 
 branding:
   icon: 'check-square'
