@@ -19,8 +19,8 @@ inputs:
     default: '.github/SemanticLintingRules.md'
 
 runs:
-  using: 'node20'
-  main: '.github/scripts/semantic-lint.js'
+  using: 'docker'
+  image: 'Dockerfile'
 
 branding:
   icon: 'check-square'
