@@ -1,0 +1,27 @@
+name: 'AI Semantic Linter'
+description: 'Lints code changes in a pull request using an AI model and a custom ruleset.'
+author: 'Your Name'
+
+inputs:
+  github-token:
+    description: 'The GITHUB_TOKEN secret.'
+    required: true
+  ai-api-key:
+    description: 'The API key for the AI service.'
+    required: true
+  config-path:
+    description: 'Path to the semantic-lint.config.json file.'
+    required: false
+    default: '.github/semantic-lint.config.json'
+  rules-path:
+    description: 'Path to the semantic linting rules file.'
+    required: false
+    default: '.github/SemanticLintingRules.md'
+
+runs:
+  using: 'node20'
+  main: '.github/scripts/semantic-lint.js'
+
+branding:
+  icon: 'check-square'
+  color: 'blue'

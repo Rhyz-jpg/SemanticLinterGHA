@@ -1,0 +1,27 @@
+name: Semantic Linting
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  semantic-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # To fetch all history for PR changes
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run semantic linting
+        env:
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/semantic-lint.js

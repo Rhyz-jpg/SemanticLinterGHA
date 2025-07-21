@@ -1,0 +1,16 @@
+{
+  "name": "semantic-linter-gha",
+  "version": "1.0.0",
+  "description": "Semantic linter using AI for GitHub Actions",
+  "main": ".github/scripts/semantic-lint.js",
+  "scripts": {
+    "lint": "node .github/scripts/semantic-lint.js"
+  },
+  "dependencies": {
+    "simple-git": "^3.19.0",
+    "@octokit/rest": "^19.0.0",
+    "glob": "^10.3.10",
+    "node-fetch": "^2.6.1",
+    "@actions/core": "^1.10.0"
+  }
+}

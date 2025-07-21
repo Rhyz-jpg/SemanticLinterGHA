@@ -1,0 +1,7 @@
+docker run -it --rm --entrypoint sh node:24-alpine
+npm install -g @google/gemini-cli
+
+
+docker build -t gemini-cli .
+
+docker run -it --rm --env-file .env gemini-cli

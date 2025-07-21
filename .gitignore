@@ -1,0 +1,6 @@
+# Environment variables
+.env
+.secrets
+
+# Node
+# node_modules/ # Temporarily commented out to allow checking in dependencies for the action

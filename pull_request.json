@@ -1,0 +1,17 @@
+{
+  "pull_request": {
+    "number": 123,
+    "head": {
+      "sha": "your-feature-branch-commit-sha"
+    },
+    "base": {
+      "sha": "main-branch-commit-sha"
+    }
+  },
+  "repository": {
+    "owner": {
+      "login": "your-github-username"
+    },
+    "name": "SemanticLinterGHA"
+  }
+}
