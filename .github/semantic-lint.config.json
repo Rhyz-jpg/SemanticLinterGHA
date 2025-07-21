@@ -1,5 +1,5 @@
 {
-  "includedFiles": ["**/*.js", "**/*.ts", "**/*.jsx", "**/*.tsx"],
+  "includedFiles": ["**/*.js", "**/*.ts", "**/*.jsx", "**/*.tsx", "**/*.cs"],
   "excludedFiles": ["node_modules/**", "dist/**", "build/**"],
   "severity": {
     "error": ["naming", "complexity"],
