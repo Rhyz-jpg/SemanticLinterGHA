@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -147,7 +148,7 @@ func (p *GeminiProvider) Analyze(patch, prompt, apiKey string) (*AnalysisResult,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API request failed with status %s: %s", resp.Status, string(body))
 	}
 
@@ -225,7 +226,7 @@ func (p *OpenAIProvider) Analyze(patch, prompt, apiKey string) (*AnalysisResult,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API request failed with status %s: %s", resp.Status, string(body))
 	}
 
@@ -303,7 +304,7 @@ func (p *AnthropicProvider) Analyze(patch, prompt, apiKey string) (*AnalysisResu
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("API request failed with status %s: %s", resp.Status, string(body))
 	}
 
@@ -388,19 +389,28 @@ func main() {
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
 
-	prNumber, err := getPullRequestNumber()
+	prNumberStr := os.Getenv("INPUT_PR-NUMBER")
+	if prNumberStr == "" {
+		fmt.Println("Pull request number is not set.")
+		os.Exit(1)
+	}
+	prNumber, err := strconv.Atoi(prNumberStr)
 	if err != nil {
-		fmt.Printf("Error getting pull request number: %v\n", err)
+		fmt.Printf("Invalid pull request number: %v\n", err)
 		os.Exit(1)
 	}
 
 	owner, repo := getRepoInfo()
+
+	fmt.Printf("Fetching changed files for PR #%d in %s/%s\n", prNumber, owner, repo)
 
 	changedFiles, err := getChangedFiles(ctx, client, owner, repo, prNumber)
 	if err != nil {
 		fmt.Printf("Error getting changed files: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Printf("Found %d raw changed files.\n", len(changedFiles))
 
 	filesToAnalyze, err := filterFiles(changedFiles, config)
 	if err != nil {
@@ -435,7 +445,7 @@ func main() {
 }
 
 func loadConfig(path string) (*Config, error) {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -448,32 +458,11 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func readRulesFile(path string) (string, error) {
-	content, err := ioutil.ReadFile(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
 	return string(content), nil
-}
-
-func getPullRequestNumber() (int, error) {
-	githubEventPath := os.Getenv("GITHUB_EVENT_PATH")
-	if githubEventPath == "" {
-		return 0, fmt.Errorf("GITHUB_EVENT_PATH is not set")
-	}
-	eventData, err := ioutil.ReadFile(githubEventPath)
-	if err != nil {
-		return 0, err
-	}
-	var event struct {
-		PullRequest struct {
-			Number int `json:"number"`
-		} `json:"pull_request"`
-	}
-	err = json.Unmarshal(eventData, &event)
-	if err != nil {
-		return 0, err
-	}
-	return event.PullRequest.Number, nil
 }
 
 func getRepoInfo() (string, string) {
@@ -490,17 +479,21 @@ func getChangedFiles(ctx context.Context, client *github.Client, owner, repo str
 
 	var changedFiles []*ChangedFile
 	for _, file := range files {
-		changedFiles = append(changedFiles, &ChangedFile{
-			Filename: *file.Filename,
-			Patch:    *file.Patch,
-		})
+		if file.Filename != nil && file.Patch != nil {
+			changedFiles = append(changedFiles, &ChangedFile{
+				Filename: *file.Filename,
+				Patch:    *file.Patch,
+			})
+		}
 	}
 	return changedFiles, nil
 }
 
 func filterFiles(files []*ChangedFile, config *Config) ([]*ChangedFile, error) {
 	var filteredFiles []*ChangedFile
+	fmt.Printf("Filtering files with patterns: included=%v, excluded=%v\n", config.IncludedFiles, config.ExcludedFiles)
 	for _, file := range files {
+		fmt.Printf("Checking file: %s\n", file.Filename)
 		included, err := matchAny(file.Filename, config.IncludedFiles)
 		if err != nil {
 			return nil, err
@@ -510,7 +503,10 @@ func filterFiles(files []*ChangedFile, config *Config) ([]*ChangedFile, error) {
 			return nil, err
 		}
 		if included && !excluded {
+			fmt.Printf("  -> Included\n")
 			filteredFiles = append(filteredFiles, file)
+		} else {
+			fmt.Printf("  -> Excluded (included=%v, excluded=%v)\n", included, excluded)
 		}
 	}
 	return filteredFiles, nil
