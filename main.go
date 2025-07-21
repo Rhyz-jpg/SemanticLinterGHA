@@ -14,6 +14,9 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/google/go-github/v57/github"
 	"golang.org/x/oauth2"
+
+	"google.golang.org/api/option"
+	"google.golang.org/genai/v0"
 )
 
 type Config struct {
@@ -32,8 +35,7 @@ type AIConfig struct {
 }
 
 type GeminiConfig struct {
-	APIEndpoint string            `json:"apiEndpoint"`
-	Headers     map[string]string `json:"headers"`
+	Model string `json:"model"`
 }
 
 type OpenAIConfig struct {
@@ -73,28 +75,6 @@ type FileAnalysisResult struct {
 	Issues   []Issue
 }
 
-type GeminiRequest struct {
-	Contents []GeminiContent `json:"contents"`
-}
-
-type GeminiContent struct {
-	Parts []GeminiPart `json:"parts"`
-}
-
-type GeminiPart struct {
-	Text string `json:"text"`
-}
-
-type GeminiResponse struct {
-	Candidates []struct {
-		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"content"`
-	} `json:"candidates"`
-}
-
 type LLMProvider interface {
 	Analyze(patch, prompt, apiKey string) (*AnalysisResult, error)
 }
@@ -112,56 +92,30 @@ type AnthropicProvider struct {
 }
 
 func (p *GeminiProvider) Analyze(patch, prompt, apiKey string) (*AnalysisResult, error) {
-	geminiReq := GeminiRequest{
-		Contents: []GeminiContent{
-			{
-				Parts: []GeminiPart{
-					{
-						Text: prompt,
-					},
-				},
-			},
-		},
-	}
-
-	bodyBytes, err := json.Marshal(geminiReq)
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		return nil, fmt.Errorf("failed to create genai client: %w", err)
 	}
+	defer client.Close()
 
-	endpoint := strings.Replace(p.Config.APIEndpoint, "{{AI_API_KEY}}", apiKey, -1)
-
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(bodyBytes))
+	model := client.GenerativeModel(p.Config.Model)
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to generate content: %w", err)
 	}
 
-	for key, value := range p.Config.Headers {
-		req.Header.Set(key, value)
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %s: %s", resp.Status, string(body))
-	}
-
-	var geminiResp GeminiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
-		return nil, fmt.Errorf("failed to decode gemini response: %w", err)
-	}
-
-	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
+	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
 		return nil, fmt.Errorf("no content found in gemini response")
 	}
 
-	jsonString := geminiResp.Candidates[0].Content.Parts[0].Text
+	part := resp.Candidates[0].Content.Parts[0]
+	text, ok := part.(genai.Text)
+	if !ok {
+		return nil, fmt.Errorf("unexpected part type: %T", part)
+	}
+
+	jsonString := string(text)
 	jsonString = strings.TrimPrefix(jsonString, "```json")
 	jsonString = strings.TrimSuffix(jsonString, "```")
 	jsonString = strings.TrimSpace(jsonString)
