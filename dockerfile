@@ -25,7 +25,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy the compiled binary from the builder stage
-COPY --from=builder /app/semantic-linter .
+COPY --from=builder /app/semantic-linter /usr/local/bin/semantic-linter
 
 # Set the entrypoint for the container
-ENTRYPOINT ["/app/semantic-linter"]
+ENTRYPOINT ["semantic-linter"]
