@@ -15,8 +15,8 @@ import (
 	"github.com/google/go-github/v57/github"
 	"golang.org/x/oauth2"
 
+	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
-	"google.golang.org/genai/v0"
 )
 
 type Config struct {
