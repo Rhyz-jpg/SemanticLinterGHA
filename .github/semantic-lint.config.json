@@ -10,7 +10,7 @@
     "provider": "gemini",
     "promptTemplate": "Below are the semantic linting rules for this repository:\n\n{rules}\n\nAnalyze the following code changes according to these rules. Format the response as JSON with 'issues' array containing objects with 'type' (matching rule category), 'severity' (error/warning based on config), 'message' (describe the issue), and 'suggestion' (how to fix it) fields.\n\nCode changes:\n{code}",
     "gemini": {
-      "model": "gemini-pro"
+      "model": "models/gemini-2.0-flash"
     },
     "openai": {
       "apiEndpoint": "https://api.openai.com/v1/chat/completions",
